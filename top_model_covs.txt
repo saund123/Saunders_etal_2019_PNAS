@@ -1,0 +1,62 @@
+model{
+
+# Priors
+a1  ~ dnorm(0,0.01)
+a2  ~ dnorm(0,0.01)
+a3  ~ dnorm(0,0.01)
+a4  ~ dnorm(0,0.01)
+a5  ~ dnorm(0,0.01)
+
+tau.a8 <- pow(sigma.a8, -2)
+sigma.a8 ~ dunif(0, 10000)
+tau.a9 <- pow(sigma.a9, -2)
+sigma.a9 ~ dunif(0, 10000)
+
+g0 ~ dnorm(0, 0.01)
+
+sd ~ dgamma(2,2)
+
+# For the ones trick
+C <- 100000
+
+for (j in 1:usite){
+
+    # random effect of site on both model parts
+    a8[j] ~ dnorm(0, tau.a8)
+    a9[j] ~ dnorm(0, tau.a9)
+
+for (t in 1:uyear){
+
+    # define the logistic regression model, where w is the probability of occurrence.
+    # use the logistic transformation exp(z)/(1 + exp(z)), where z is a linear function
+    logit(w[j,t]) <- zeta[j,t]
+    zeta[j,t] <- g0 + a9[j]
+
+    # define the gamma regression model for the mean using the inverse link
+    mu[j,t] <- pow(eta[j,t], -1)
+    eta[j,t] <- a1 + a2*naba.st[t] + a3*nectar.st1[t] + a4*forestd.st[j,t] + a5*reserve[j] + a8[j]
+
+    # redefine the mu and sd of the continuous part into the shape and rate parameters
+    shape[j,t] <- pow(mu[j,t], 2) / pow(sd, 2)
+    rate[j,t] <- mu[j,t] / pow(sd, 2)
+
+    # for readability, define the log-likelihood of the gamma here
+    logGamma[j,t] <- log(dgamma(y[j,t], shape[j,t], rate[j,t]))
+
+    # define the total likelihood, where the likelihood is (1 - w) if y < 0.0001 (z = 0) or
+    # the likelihood is w * gammalik if y >= 0.0001 (z = 1). So if z = 1, then the first bit must be
+    # 0 and the second bit 1. Use 1 - z, which is 0 if y > 0.0001 and 1 if y < 0.0001
+    # z matrix is fed in as data and consists of dummy variable of 0s where y > 0.0001 and 1s where y > 0.0001
+
+    logLik[j,t] <- (1 - z[j,t]) * log(1 - w[j,t]) + z[j,t] * (log(w[j,t]) + logGamma[j,t])
+
+    Lik[j,t] <- exp(logLik[j,t])
+
+    # Use the ones trick (matrix of ones fed in as data)
+    p[j,t] <- Lik[j,t] / C
+    ones[j,t] ~ dbern(p[j,t])
+
+  }
+}
+  
+}
